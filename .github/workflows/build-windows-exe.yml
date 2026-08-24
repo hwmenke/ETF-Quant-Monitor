@@ -1,0 +1,61 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Materialize app source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, gzip, pathlib
+          parts = sorted(pathlib.Path('.').glob('source.b64.*'))
+          b64 = "".join(p.read_text() for p in parts).replace('\n','').replace('\r','')
+          # also allow newlines in parts
+          b64 = "".join(b64.split())
+          pathlib.Path("etf_quant_monitor.py").write_bytes(gzip.decompress(base64.b64decode(b64)))
+          print("ok", pathlib.Path("etf_quant_monitor.py").stat().st_size)
+          PY
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 pyinstaller
+
+      - name: Build onefile windowed EXE
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onefile --name "ETF_Quant_Monitor" --collect-all PySide6 etf_quant_monitor.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ETF_Quant_Monitor-Windows
+          path: dist/ETF_Quant_Monitor.exe
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.2
+          name: ETF Quant Monitor v1.0.2 (Windows)
+          body: |
+            Double-click **ETF_Quant_Monitor.exe** — no install, no Python needed.
+            Demo (mock) mode starts automatically.
+            First launch may take 10–30 seconds. If SmartScreen warns: More info → Run anyway.
+          files: dist/ETF_Quant_Monitor.exe
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
